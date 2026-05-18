@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# 配置（包含密码，不能提交）
+backend/config.yaml
+backend/data/
+
+# PyInstaller
+*.spec
+backend/dist/
+backend/build/
+
+# Node
+node_modules/
+frontend/dist/
+electron/resources/logmind-backend
+electron/resources/logmind-backend.exe
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

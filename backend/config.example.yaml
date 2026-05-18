@@ -1,0 +1,48 @@
+# LogMind 配置文件
+# 复制此文件为 config.yaml，填入真实信息
+
+# ── LLM 配置 ──────────────────────────────────────────────────
+llm:
+  provider: kimi                              # openai | kimi | deepseek | qwen | zhipu
+  api_key: sk-xxxx                            # 你的 API Key
+  model: moonshot-v1-8k                       # 模型名称
+  base_url: https://api.moonshot.cn/v1        # 兼容 OpenAI 协议的地址
+
+# ── 数据源（三选一，注释掉其他两个）──────────────────────────
+
+# 模式一：SSH 直连（推荐新手，零基础设施）
+datasource:
+  type: ssh
+
+servers:
+  - name: 我的服务器
+    host: 192.168.1.10
+    username: root
+    password: xxxx                            # 或用 private_key_path: ~/.ssh/id_rsa
+    log_paths:
+      - /var/log/app/app.log
+      - /var/log/app/error.log
+
+# 模式二：Native 本地存储（历史查询 + 看板）
+# datasource:
+#   type: duckdb
+#   db_path: ./data/logmind.db
+# collector:
+#   enabled: true
+#   servers:
+#     - name: 我的服务器
+#       host: 192.168.1.10
+#       username: root
+#       password: xxxx
+#       log_paths:
+#         - /var/log/app/app.log
+
+# 模式三：Elasticsearch（已有 ELK）
+# datasource:
+#   type: elasticsearch
+#   hosts:
+#     - http://192.168.1.100:9200
+#   username: elastic
+#   password: xxxx
+#   default_index: "app-logs-*"
+#   verify_certs: false

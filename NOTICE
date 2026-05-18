@@ -1,0 +1,11 @@
+LogMind uses the following open source components:
+
+- LangChain (MIT) - https://github.com/langchain-ai/langchain
+- LangGraph (MIT) - https://github.com/langchain-ai/langgraph
+- FastAPI (MIT) - https://github.com/tiangolo/fastapi
+- asyncssh (MIT) - https://github.com/ronf/asyncssh
+- DuckDB (MIT) - https://github.com/duckdb/duckdb
+- elasticsearch-py (Apache 2.0) - https://github.com/elastic/elasticsearch-py
+- Pydantic (MIT) - https://github.com/pydantic/pydantic
+- httpx (BSD) - https://github.com/encode/httpx
+- PyYAML (MIT) - https://github.com/yaml/pyyaml
