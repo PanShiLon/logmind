@@ -6,10 +6,6 @@ from ..core.datasource.base import LogDataSource
 
 
 def make_log_tools(datasource: LogDataSource) -> list:
-    """
-    工厂函数：将 datasource 注入到所有 Tool 闭包中。
-    LangGraph Agent 通过此列表获取可调用 Tool。
-    """
 
     @tool
     async def search_logs(

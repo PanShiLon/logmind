@@ -22,6 +22,3 @@ app.include_router(config_router.router)
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
-
-
-# 启动命令：uvicorn main:app --reload --port 8000

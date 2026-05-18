@@ -22,10 +22,6 @@ class SearchResult:
 
 
 class LogDataSource(ABC):
-    """
-    所有数据源的统一抽象接口。
-    Tool 层只依赖此接口，不感知底层是 SSH / DuckDB / Elasticsearch。
-    """
 
     @abstractmethod
     async def search(
@@ -36,9 +32,7 @@ class LogDataSource(ABC):
         end_time: Optional[datetime] = None,
         limit: int = 100,
         servers: Optional[List[str]] = None,
-    ) -> SearchResult:
-        """全文搜索日志"""
-        ...
+    ) -> SearchResult: ...
 
     @abstractmethod
     async def aggregate(
@@ -47,9 +41,7 @@ class LogDataSource(ABC):
         query: Optional[str] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-    ) -> Dict[str, int]:
-        """聚合统计，返回 {value: count} 字典"""
-        ...
+    ) -> Dict[str, int]: ...
 
     @abstractmethod
     async def time_series(
@@ -59,10 +51,7 @@ class LogDataSource(ABC):
         level: Optional[str] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-    ) -> List[Dict[str, Any]]:
-        """时序数据，返回 [{timestamp, count, ...}] 列表"""
-        ...
+    ) -> List[Dict[str, Any]]: ...
 
     async def health_check(self) -> Dict[str, Any]:
-        """数据源连通性检查，子类可覆盖"""
         return {"status": "ok", "datasource": self.__class__.__name__}

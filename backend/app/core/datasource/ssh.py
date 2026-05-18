@@ -48,7 +48,6 @@ async def _fetch_server(
     grep_cmd: str,
     limit: int,
 ) -> List[str]:
-    """在单台服务器上并发执行 grep，返回原始行列表"""
     connect_kwargs: Dict[str, Any] = {
         "host": server.host,
         "port": server.port,
@@ -71,7 +70,6 @@ async def _fetch_server(
 
 
 class SSHDataSource(LogDataSource):
-    """通过 SSH 直连远端服务器，零基础设施依赖。"""
 
     def __init__(self, servers: List[SSHServerConfig]):
         self._servers = servers

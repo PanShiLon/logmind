@@ -6,10 +6,6 @@ if TYPE_CHECKING:
 
 
 def create_datasource(settings: Settings) -> "LogDataSource":
-    """
-    根据配置中 datasource.type 创建对应的数据源实例。
-    新增数据源只需在此注册，Tool 层无需改动。
-    """
     ds_type = settings.datasource.type
 
     match ds_type:
