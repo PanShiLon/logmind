@@ -94,6 +94,15 @@ logmind/
 - [ ] Phase 5：Electron 桌面应用
 - [ ] Phase 6：IntelliJ IDEA 插件
 
+## Contributing
+
+欢迎贡献！提交 PR 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 声明
+
+LogMind 是独立原创开发的项目，非任何现有项目的 fork 或衍生版本。
+所有代码均为原创，依赖库协议详见 [NOTICE](NOTICE)。
+
 ## License
 
 MIT © [panshilong](https://github.com/panshilong)
