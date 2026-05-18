@@ -3,7 +3,7 @@
 > 只需要 SSH 权限，5分钟内用自然语言查所有服务器的日志。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
 [![GitHub Stars](https://img.shields.io/github/stars/panshilong/logmind?style=social)](https://github.com/panshilong/logmind)
 
 <!--
@@ -45,16 +45,21 @@ docker compose up
 
 访问 `http://localhost:8000/docs` 查看 API 文档。
 
-### 方式二：本地运行
+### 方式二：本地运行（macOS）
 
 ```bash
 git clone https://github.com/panshilong/logmind.git
 cd logmind/backend
 cp config.example.yaml config.yaml
 # 编辑 config.yaml，填入 SSH 信息和 LLM API Key
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+
+# 需要 Python 3.12（macOS 上 3.11 有 libexpat 兼容问题）
+brew install python@3.12 expat
+/opt/homebrew/opt/python@3.12/bin/python3.12 -m venv .venv --without-pip
+curl -sS https://bootstrap.pypa.io/get-pip.py | DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib .venv/bin/python
+source .venv/bin/activate
+DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib pip install -r requirements.txt
+DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib uvicorn main:app --reload --port 8000
 ```
 
 ---

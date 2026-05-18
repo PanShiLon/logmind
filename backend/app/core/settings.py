@@ -48,7 +48,7 @@ class Settings(BaseModel):
 
 _settings: Optional[Settings] = None
 
-CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config.yaml"
+CONFIG_PATH = Path(__file__).parent.parent.parent / "config.yaml"
 
 
 def load_settings(path: Optional[Path] = None) -> Settings:
