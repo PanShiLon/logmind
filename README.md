@@ -6,7 +6,15 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
 [![GitHub Stars](https://img.shields.io/github/stars/PanShiLon/logmind?style=social)](https://github.com/PanShiLon/logmind)
 
-> 📌 **动图演示**：录制中，Phase 2 完成后发布
+## 截图预览
+
+| 首页 | 对话 |
+|:---:|:---:|
+| ![首页](docs/screenshots/welcome.png) | ![对话](docs/screenshots/chat.png) |
+
+| 图表分析 | 数据源配置 |
+|:---:|:---:|
+| ![图表](docs/screenshots/chart.png) | ![配置](docs/screenshots/config.png) |
 
 ---
 
@@ -155,8 +163,8 @@ logmind/
 ## 开发路线图
 
 - [x] Phase 1：SSH 直连 + LangGraph + FastAPI 骨架
-- [x] Phase 2：Analysis Agent + Vue3 前端
-- [ ] Phase 3：Dashboard Agent + DuckDB Native 模式
+- [x] Phase 2：Analysis Agent + Vue3 前端 + 历史会话
+- [x] Phase 3：Dashboard Agent + 图表渲染 + 数据源配置页
 - [ ] Phase 4：Docker Compose + LangFuse 可观测性
 - [ ] Phase 5：Electron 桌面应用（Windows + Mac）
 - [ ] Phase 6：IntelliJ IDEA 插件

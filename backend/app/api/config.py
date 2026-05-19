@@ -121,24 +121,153 @@ async def test_ssh(req: SSHTestRequest):
 async def test_es(req: ESTestRequest):
     try:
         from elasticsearch import AsyncElasticsearch
-        es = AsyncElasticsearch(
+        es_client = AsyncElasticsearch(
             hosts=req.hosts,
-            http_auth=(req.username, req.password) if req.username else None,
+            basic_auth=(req.username, req.password) if (req.username and req.password) else None,
             verify_certs=req.verify_certs,
         )
         try:
-            # 优先用 count，权限要求最低
-            resp = await es.count(index=req.index)
+            resp = await es_client.count(index=req.index)
             count = resp.get("count", 0)
             return {"ok": True, "message": f"ES 连接成功，索引 {req.index} 共 {count:,} 条日志"}
-        except Exception as inner:
-            # count 失败时尝试 ping
-            await es.ping()
+        except Exception:
+            await es_client.ping()
             return {"ok": True, "message": f"ES 连接成功（索引 {req.index} 查询受限，但连接正常）"}
         finally:
-            await es.close()
+            await es_client.close()
     except Exception as e:
         return {"ok": False, "message": f"连接失败: {str(e)}"}
+
+
+@router.get("/stats")
+async def get_datasource_stats():
+    """首页状态栏：读取内部 config，自动探测数据源类型并返回统计。"""
+    if not CONFIG_PATH.exists():
+        return {"ok": False}
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    ds = raw.get("datasource", {})
+    ds_type = ds.get("type", "")
+
+    if ds_type == "elasticsearch":
+        try:
+            from elasticsearch import AsyncElasticsearch
+            username = ds.get("username")
+            password = ds.get("password")
+            es_client = AsyncElasticsearch(
+                hosts=ds.get("hosts", []),
+                basic_auth=(username, password) if (username and password) else None,
+                verify_certs=ds.get("verify_certs", True),
+            )
+            index = ds.get("default_index", "app-logs-*")
+            try:
+                total = (await es_client.count(index=index)).get("count", 0)
+                error_count = 0
+                for level_field in ("app.level.keyword", "app.level", "level.keyword", "level"):
+                    try:
+                        r = await es_client.count(index=index, body={"query": {"term": {level_field: "ERROR"}}})
+                        error_count = r.get("count", 0)
+                        if error_count > 0:
+                            break
+                    except Exception:
+                        continue
+                error_ratio = round(error_count / total * 100, 1) if total > 0 else 0
+                return {"ok": True, "type": "elasticsearch", "total": total,
+                        "error_count": error_count, "error_ratio": error_ratio}
+            finally:
+                await es_client.close()
+        except Exception as e:
+            return {"ok": False, "type": "elasticsearch", "message": str(e)}
+
+    if ds_type == "ssh":
+        servers = raw.get("servers", [])
+        log_path_count = sum(len(s.get("log_paths", [])) for s in servers)
+        return {"ok": True, "type": "ssh", "server_count": len(servers), "log_path_count": log_path_count}
+
+    if ds_type == "duckdb":
+        db_path = ds.get("db_path", "")
+        if db_path and Path(db_path).exists():
+            try:
+                import duckdb
+                con = duckdb.connect(db_path, read_only=True)
+                tables = con.execute("SHOW TABLES").fetchall()
+                con.close()
+                return {"ok": True, "type": "duckdb", "table_count": len(tables)}
+            except Exception as e:
+                return {"ok": False, "type": "duckdb", "message": str(e)}
+        return {"ok": False, "type": "duckdb"}
+
+    return {"ok": False}
+
+
+@router.post("/preview/elasticsearch")
+async def preview_es(req: ESTestRequest):
+    """测试连接成功后调用，返回服务列表/总量/ERROR 占比，用于配置页预览。"""
+    try:
+        from elasticsearch import AsyncElasticsearch
+        es_client = AsyncElasticsearch(
+            hosts=req.hosts,
+            basic_auth=(req.username, req.password) if (req.username and req.password) else None,
+            verify_certs=req.verify_certs,
+        )
+        try:
+            # 总文档数
+            count_resp = await es_client.count(index=req.index)
+            total = count_resp.get("count", 0)
+
+            # ERROR 数量
+            # 尝试多个常见 level 字段名
+            error_count = 0
+            for level_field in ("app.level.keyword", "app.level", "level.keyword", "level"):
+                try:
+                    error_resp = await es_client.count(
+                        index=req.index,
+                        body={"query": {"term": {level_field: "ERROR"}}},
+                    )
+                    error_count = error_resp.get("count", 0)
+                    if error_count > 0:
+                        break
+                except Exception:
+                    continue
+
+            # 各服务文档数（取 top 20），尝试多个常见服务字段名
+            buckets = []
+            for svc_field in ("app.service_name.keyword", "app.service_name", "service.keyword", "service"):
+                try:
+                    agg_resp = await es_client.search(
+                        index=req.index,
+                        body={
+                            "size": 0,
+                            "aggs": {
+                                "services": {
+                                    "terms": {"field": svc_field, "size": 20}
+                                }
+                            },
+                        },
+                    )
+                    buckets = agg_resp.get("aggregations", {}).get("services", {}).get("buckets", [])
+                    if buckets:
+                        break
+                except Exception:
+                    continue
+            buckets = buckets
+            services = [{"name": b["key"], "count": b["doc_count"]} for b in buckets]
+
+            error_ratio = round(error_count / total * 100, 1) if total > 0 else 0
+            return {
+                "ok": True,
+                "total": total,
+                "error_count": error_count,
+                "error_ratio": error_ratio,
+                "services": services,
+            }
+        finally:
+            await es_client.close()
+    except Exception as e:
+        msg = str(e)
+        if "401" in msg or "authentication" in msg.lower() or "credentials" in msg.lower():
+            msg = "索引需要认证，请在密码框填入 ES 密码后重试"
+        return {"ok": False, "message": f"预览数据失败: {msg}"}
 
 
 class LLMTestRequest(BaseModel):
@@ -169,6 +298,9 @@ async def test_llm(req: LLMTestRequest):
         elif "Connection" in msg or "connect" in msg.lower():
             msg = f"无法连接到 {req.base_url}，请检查 Base URL"
         return {"ok": False, "message": f"连接失败: {msg}"}
+
+
+@router.post("/test-connection/duckdb")
 async def test_duckdb(req: DuckDBTestRequest):
     try:
         import duckdb

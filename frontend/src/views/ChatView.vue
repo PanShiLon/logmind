@@ -2,6 +2,19 @@
 import { ref, nextTick, onMounted, computed, watch } from 'vue'
 import LogTable from '../components/LogTable.vue'
 import ChartWidget from '../components/ChartWidget.vue'
+import { marked } from 'marked'
+import hljs from 'highlight.js'
+
+marked.setOptions({
+  highlight(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value
+    }
+    return hljs.highlightAuto(code).value
+  },
+  breaks: true,
+  gfm: true,
+})
 
 // ── 状态 ──────────────────────────────────────────────────────────────────────
 const messages = ref([])
@@ -14,13 +27,43 @@ const currentSessionId = ref(null)
 
 const serverStatuses = ref([])   // [{name, host, status}]
 const timeChip = ref('')         // 选中的时间快捷
+const dsStats = ref(null)        // 数据源统计
 
 // ── 常量 ──────────────────────────────────────────────────────────────────────
-const SCENE_CARDS = [
-  { icon: '🔴', label: '查最近错误', prompt: '查一下所有服务最近 1 小时的 ERROR 日志' },
-  { icon: '📈', label: '分析错误趋势', prompt: '分析一下最近 24 小时错误趋势，是否在加剧？' },
-  { icon: '🏆', label: '找异常最多的服务', prompt: '所有服务里 ERROR 最多的是哪个？给我排个名' },
-  { icon: '🔌', label: '检查服务器连通性', prompt: '检查数据源连通性' },
+const CAPABILITY_GROUPS = [
+  {
+    intent: 'query',
+    label: '日志查询',
+    color: '#3b82f6',
+    desc: '自然语言搜索，无需写 KQL / DSL',
+    cards: [
+      { icon: '🔴', label: '查最近 ERROR', prompt: '查一下所有服务最近 1 小时的 ERROR 日志' },
+      { icon: '🔍', label: '关键词搜索', prompt: '搜索包含 NullPointerException 的日志' },
+      { icon: '🖥️', label: '按服务查询', prompt: '查一下支付服务今天的 WARN 和 ERROR 日志' },
+    ],
+  },
+  {
+    intent: 'analyze',
+    label: '分析诊断',
+    color: '#8b5cf6',
+    desc: '异常检测、趋势分析、根因定位',
+    cards: [
+      { icon: '📈', label: '错误趋势', prompt: '分析一下最近 24 小时错误趋势，是否在加剧？' },
+      { icon: '🏆', label: '服务排名', prompt: '所有服务里 ERROR 最多的是哪个？给我排个名' },
+      { icon: '🔬', label: '深入分析异常', prompt: '深入分析 NullPointerException，首次出现时间和频率' },
+    ],
+  },
+  {
+    intent: 'dashboard',
+    label: '数据图表',
+    color: '#10b981',
+    desc: '一句话生成 ECharts 可视化图表',
+    cards: [
+      { icon: '📊', label: '各服务错误分布', prompt: '画一张今天各服务 ERROR 数量的柱状图' },
+      { icon: '📉', label: 'ERROR 趋势折线图', prompt: '画出过去 24 小时 ERROR 日志的趋势折线图' },
+      { icon: '🥧', label: '错误级别占比', prompt: '用饼图展示今天各日志级别的数量占比' },
+    ],
+  },
 ]
 
 const TIME_CHIPS = ['最近 1 小时', '最近 6 小时', '今天', '昨天']
@@ -44,6 +87,51 @@ async function scrollToBottom() {
   if (chatBody.value) chatBody.value.scrollTop = chatBody.value.scrollHeight
 }
 
+function exportLogsCSV(logs) {
+  const header = ['timestamp', 'level', 'source', 'message']
+  const rows = logs.map(r => header.map(k => `"${(r[k] || '').replace(/"/g, '""')}"`).join(','))
+  const csv = [header.join(','), ...rows].join('\n')
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `logmind-export-${Date.now()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportSessionMD() {
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
+  const lines = [`# LogMind 会话导出`, ``, `> 导出时间：${now}`, ``]
+  for (const msg of messages.value) {
+    if (msg.role === 'user') {
+      lines.push(`## 用户`, ``, msg.content, ``)
+    } else {
+      lines.push(`## LogMind AI`)
+      if (msg.intent) lines.push(``, `*意图：${INTENT_LABEL[msg.intent] || msg.intent}*`)
+      lines.push(``, msg.content.replace(/<chart_config>[\s\S]*?<\/chart_config>/g, '').trim(), ``)
+      if (msg.logs?.length > 0) {
+        lines.push(`### 日志数据 (${msg.logs.length} 条)`, ``)
+        lines.push('| 时间 | 级别 | 服务 | 消息 |')
+        lines.push('|---|---|---|---|')
+        for (const log of msg.logs) {
+          const cell = (v) => (v || '').replace(/\|/g, '\\|')
+          lines.push(`| ${cell(log.timestamp)} | ${cell(log.level)} | ${cell(log.source)} | ${cell(log.message)} |`)
+        }
+        lines.push(``)
+      }
+    }
+  }
+  const md = lines.join('\n')
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `logmind-session-${Date.now()}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function formatTime(iso) {
   const d = new Date(iso), now = new Date(), diff = now - d
   if (diff < 60000) return '刚刚'
@@ -53,17 +141,8 @@ function formatTime(iso) {
 }
 
 function renderText(text) {
-  // 去掉 <chart_config>...</chart_config> 块（图表单独渲染）
-  const stripped = text.replace(/<chart_config>[\s\S]*?<\/chart_config>/g, '')
-  return stripped
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/\n/g, '<br>')
+  const stripped = text.replace(/<chart_config>[\s\S]*?<\/chart_config>/g, '').trim()
+  return marked.parse(stripped)
 }
 
 function extractCharts(text) {
@@ -87,6 +166,16 @@ async function fetchServerHealth() {
     serverStatuses.value = await res.json()
   } catch {
     // 静默失败，不影响主流程
+  }
+}
+
+async function fetchDsStats() {
+  try {
+    const res = await fetch('/api/config/stats')
+    const data = await res.json()
+    if (data.ok) dsStats.value = data
+  } catch {
+    // 静默失败
   }
 }
 
@@ -297,6 +386,7 @@ function handleKeydown(e) {
 onMounted(async () => {
   await fetchSessions()
   await fetchServerHealth()
+  fetchDsStats()
   if (sessions.value.length > 0) {
     await switchSession(sessions.value[0].id)
   } else {
@@ -353,31 +443,85 @@ onMounted(async () => {
       </div>
 
       <div class="sidebar-footer">
+        <button
+          v-if="messages.length > 0"
+          class="export-session-btn"
+          @click="exportSessionMD"
+          title="导出当前会话为 Markdown"
+        >
+          ↓ 导出会话
+        </button>
         <a href="/config" class="config-link">⚙ 数据源配置</a>
       </div>
     </aside>
 
     <!-- 主区域 -->
     <main class="chat-main">
+
+      <!-- 数据源状态栏 -->
+      <div v-if="dsStats" class="ds-stats-bar">
+        <span class="ds-stats-type">
+          {{ dsStats.type === 'elasticsearch' ? 'ES' : dsStats.type === 'ssh' ? 'SSH' : 'DuckDB' }}
+        </span>
+        <template v-if="dsStats.type === 'elasticsearch'">
+          <span class="ds-stat-item">总计 <b>{{ (dsStats.total || 0).toLocaleString() }}</b> 条</span>
+          <span class="ds-stat-sep">·</span>
+          <span class="ds-stat-item ds-stat-error">ERROR <b>{{ (dsStats.error_count || 0).toLocaleString() }}</b></span>
+          <span class="ds-stat-sep">·</span>
+          <span class="ds-stat-item" :class="dsStats.error_ratio > 5 ? 'ds-stat-error' : ''">
+            错误率 <b>{{ dsStats.error_ratio }}%</b>
+          </span>
+        </template>
+        <template v-else-if="dsStats.type === 'ssh'">
+          <span class="ds-stat-item"><b>{{ dsStats.server_count }}</b> 台服务器</span>
+          <span v-if="dsStats.log_path_count" class="ds-stat-sep">·</span>
+          <span v-if="dsStats.log_path_count" class="ds-stat-item"><b>{{ dsStats.log_path_count }}</b> 个日志路径</span>
+        </template>
+        <template v-else-if="dsStats.type === 'duckdb'">
+          <span class="ds-stat-item"><b>{{ dsStats.table_count }}</b> 张表</span>
+        </template>
+        <span class="ds-stats-refresh" @click="fetchDsStats" title="刷新">↻</span>
+      </div>
+
       <div class="chat-body" ref="chatBody">
 
         <!-- 欢迎页 -->
         <div v-if="isEmpty" class="welcome">
           <div class="welcome-icon">◈</div>
           <div class="welcome-title">LogMind AI 日志分析</div>
-          <div class="welcome-sub">用自然语言查询和分析服务器日志</div>
+          <div class="welcome-sub">用自然语言查询日志、分析异常、生成图表，无需掌握 KQL / DSL</div>
 
-          <div class="scene-grid">
-            <button
-              v-for="card in SCENE_CARDS"
-              :key="card.label"
-              class="scene-card"
-              @click="sendMessage(card.prompt)"
-            >
-              <span class="scene-icon">{{ card.icon }}</span>
-              <span class="scene-label">{{ card.label }}</span>
-              <span class="scene-prompt">{{ card.prompt }}</span>
-            </button>
+          <!-- 配置入口 banner -->
+          <a href="/config" class="config-banner">
+            <span class="config-banner-icon">⚙</span>
+            <span class="config-banner-text">配置数据源（SSH / Elasticsearch / DuckDB）</span>
+            <span class="config-banner-arrow">→</span>
+          </a>
+
+          <!-- 能力分组 -->
+          <div class="capability-groups">
+            <div v-for="group in CAPABILITY_GROUPS" :key="group.intent" class="capability-group">
+              <div class="group-header">
+                <span class="group-dot" :style="{ background: group.color }"></span>
+                <span class="group-label" :style="{ color: group.color }">{{ group.label }}</span>
+                <span class="group-desc">{{ group.desc }}</span>
+              </div>
+              <div class="group-cards">
+                <button
+                  v-for="card in group.cards"
+                  :key="card.label"
+                  class="scene-card"
+                  :style="{ '--card-accent': group.color }"
+                  @click="sendMessage(card.prompt)"
+                >
+                  <span class="scene-icon">{{ card.icon }}</span>
+                  <div class="scene-body">
+                    <span class="scene-label">{{ card.label }}</span>
+                    <span class="scene-prompt">{{ card.prompt }}</span>
+                  </div>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -401,6 +545,12 @@ onMounted(async () => {
             </div>
 
             <div v-if="msg.logs.length > 0" class="log-section">
+              <div class="log-section-header">
+                <span class="log-count">{{ msg.logs.length }} 条日志</span>
+                <button class="export-btn" @click="exportLogsCSV(msg.logs)" title="导出 CSV">
+                  ↓ 导出 CSV
+                </button>
+              </div>
               <LogTable :entries="msg.logs" />
             </div>
 
@@ -472,6 +622,111 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+@import 'highlight.js/styles/github-dark.css';
+
+/* ── ai-text Markdown 渲染 ──────────────────────────────────────────────── */
+.ai-text :deep(h1), .ai-text :deep(h2), .ai-text :deep(h3) {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+.ai-text :deep(h1) { font-size: 17px; }
+.ai-text :deep(h2) { font-size: 15px; }
+.ai-text :deep(h3) { font-size: 13px; }
+.ai-text :deep(p) { margin: 4px 0; line-height: 1.65; }
+.ai-text :deep(ul), .ai-text :deep(ol) {
+  padding-left: 18px;
+  margin: 4px 0;
+}
+.ai-text :deep(li) { margin: 2px 0; line-height: 1.6; }
+.ai-text :deep(code) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: var(--accent);
+}
+.ai-text :deep(pre) {
+  background: #0d1117;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.ai-text :deep(pre code) {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: 12px;
+}
+.ai-text :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.ai-text :deep(th) {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.ai-text :deep(td) {
+  padding: 5px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  color: var(--text-secondary);
+}
+.ai-text :deep(tr:hover td) { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.ai-text :deep(blockquote) {
+  border-left: 3px solid var(--accent);
+  padding: 6px 12px;
+  margin: 6px 0;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+.ai-text :deep(hr) { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.ai-text :deep(strong) { color: var(--text-primary); font-weight: 600; }
+.ai-text :deep(a) { color: var(--accent); text-decoration: underline; }
+
+/* ── 数据源状态栏 ──────────────────────────────────────────────────────────── */
+.ds-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 48px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.ds-stats-type {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.ds-stat-item b { color: var(--text-secondary); font-weight: 600; }
+.ds-stat-error b { color: #ef4444; }
+.ds-stat-sep { color: var(--border); }
+.ds-stats-refresh {
+  margin-left: auto;
+  cursor: pointer;
+  opacity: 0.5;
+  font-size: 13px;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+.ds-stats-refresh:hover { opacity: 1; }
+
 /* ── 布局 ─────────────────────────────────────────────────────────────────── */
 .chat-layout {
   display: flex;
@@ -627,35 +882,92 @@ onMounted(async () => {
 .welcome {
   margin: auto;
   text-align: center;
-  max-width: 560px;
+  max-width: 680px;
   width: 100%;
+  padding: 8px 0 24px;
 }
-.welcome-icon  { font-size: 44px; color: var(--bg-msg-user); margin-bottom: 14px; }
-.welcome-title { font-size: 22px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-.welcome-sub   { font-size: 14px; color: var(--text-muted); margin-bottom: 32px; }
+.welcome-icon  { font-size: 40px; color: var(--accent); margin-bottom: 12px; }
+.welcome-title { font-size: 22px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.welcome-sub   { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
 
-.scene-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+/* 配置入口 banner */
+.config-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 24px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.config-banner:hover { border-color: var(--accent); color: var(--accent); }
+.config-banner-icon  { font-size: 15px; }
+.config-banner-text  { flex: 1; text-align: left; }
+.config-banner-arrow { opacity: 0.5; }
+
+/* 能力分组 */
+.capability-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   text-align: left;
+}
+
+.capability-group {}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.group-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.group-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.group-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.group-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 }
 
 .scene-card {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px 16px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
   background: var(--bg-sidebar);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-left: 3px solid var(--card-accent, var(--border));
+  border-radius: 8px;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s, background 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
-.scene-card:hover { background: var(--bg-card); border-color: var(--border); }
-
-.scene-icon  { font-size: 18px; }
+.scene-card:hover {
+  background: var(--bg-card);
+  border-left-color: var(--card-accent, var(--accent));
+  transform: translateY(-1px);
+}
+.scene-icon  { font-size: 16px; margin-top: 1px; flex-shrink: 0; }
+.scene-body  { display: flex; flex-direction: column; gap: 3px; }
 .scene-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 .scene-prompt { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
 
@@ -710,6 +1022,28 @@ onMounted(async () => {
 .tool-icon { font-size: 11px; }
 
 .log-section { margin: 4px 0; }
+.log-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 6px;
+}
+.log-count { font-size: 11px; color: var(--text-muted); }
+.export-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.export-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
 .chart-section { margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
 
 .ai-text :deep(strong) { color: var(--text-primary); }
@@ -888,4 +1222,24 @@ onMounted(async () => {
   transition: all 0.15s;
 }
 .config-link:hover { background: var(--bg-card); color: var(--text-secondary); }
+
+.export-session-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+.export-session-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
 </style>

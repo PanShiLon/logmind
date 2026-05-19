@@ -1,6 +1,7 @@
 <template>
   <div class="config-page">
     <div class="config-header">
+      <a href="/" class="back-btn">← 返回对话</a>
       <h2>数据源配置</h2>
       <p class="subtitle">配置后点击「测试连接」验证，通过后保存生效</p>
     </div>
@@ -83,6 +84,53 @@
           {{ testResults['es'].message }}
         </span>
       </div>
+
+      <!-- ES 数据预览 -->
+      <div v-if="esPreview" class="es-preview">
+        <div class="preview-title">
+          数据预览
+          <span class="preview-refresh" @click="loadESPreview" title="刷新">↻</span>
+        </div>
+        <div v-if="esPreviewLoading" class="preview-loading">加载中...</div>
+        <div v-else-if="!esPreview.ok" class="preview-error">{{ esPreview.message }}</div>
+        <div v-else>
+          <div class="preview-stats">
+            <div class="stat-card">
+              <div class="stat-value">{{ esPreview.total?.toLocaleString() }}</div>
+              <div class="stat-label">总日志量</div>
+            </div>
+            <div class="stat-card error">
+              <div class="stat-value">{{ esPreview.error_count?.toLocaleString() }}</div>
+              <div class="stat-label">ERROR 条数</div>
+            </div>
+            <div class="stat-card warn">
+              <div class="stat-value">{{ esPreview.error_ratio }}%</div>
+              <div class="stat-label">ERROR 占比</div>
+            </div>
+          </div>
+          <div v-if="esPreview.services?.length" class="preview-service-list">
+            <div class="service-list-title">服务列表（Top {{ esPreview.services.length }}）</div>
+            <div class="service-table">
+              <div class="service-row header-row">
+                <span>服务名</span>
+                <span>日志量</span>
+                <span>占比</span>
+              </div>
+              <div v-for="svc in esPreview.services" :key="svc.name" class="service-row">
+                <span class="svc-name">{{ svc.name }}</span>
+                <span>{{ svc.count.toLocaleString() }}</span>
+                <span>
+                  <div class="bar-wrap">
+                    <div class="bar-fill" :style="{ width: Math.round(svc.count / esPreview.total * 100) + '%' }"></div>
+                    <span class="bar-pct">{{ Math.round(svc.count / esPreview.total * 100) }}%</span>
+                  </div>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="preview-empty">未检测到 service 字段，请确认索引 mapping</div>
+        </div>
+      </div>
     </div>
 
     <!-- DuckDB Tab -->
@@ -156,6 +204,10 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 
+// 同步主题，避免进入配置页时主题丢失
+const theme = localStorage.getItem('logmind-theme') || 'dark'
+document.documentElement.setAttribute('data-theme', theme)
+
 const tabs = [
   { key: 'ssh', label: 'SSH 直连' },
   { key: 'es', label: 'Elasticsearch' },
@@ -197,6 +249,8 @@ const testResults = reactive({})
 const saving = ref(false)
 const saveMsg = ref('')
 const saveOk = ref(false)
+const esPreview = ref(null)
+const esPreviewLoading = ref(false)
 
 onMounted(async () => {
   try {
@@ -261,6 +315,7 @@ async function testSSH(i) {
 async function testES() {
   testing.value = 'es'
   testResults['es'] = null
+  esPreview.value = null
   try {
     const res = await fetch('/api/config/test-connection/elasticsearch', {
       method: 'POST',
@@ -274,10 +329,34 @@ async function testES() {
       }),
     })
     testResults['es'] = await res.json()
+    if (testResults['es'].ok) loadESPreview()
   } catch (e) {
     testResults['es'] = { ok: false, message: `请求失败: ${e.message}` }
   } finally {
     testing.value = null
+  }
+}
+
+async function loadESPreview() {
+  esPreviewLoading.value = true
+  esPreview.value = { ok: true }  // 先占位让面板出现
+  try {
+    const res = await fetch('/api/config/preview/elasticsearch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hosts: es.hosts.filter(Boolean),
+        username: es.username || null,
+        password: es.password || null,
+        index: es.index,
+        verify_certs: es.verify_certs,
+      }),
+    })
+    esPreview.value = await res.json()
+  } catch (e) {
+    esPreview.value = { ok: false, message: `预览失败: ${e.message}` }
+  } finally {
+    esPreviewLoading.value = false
   }
 }
 
@@ -415,21 +494,34 @@ function yamlVal(v) {
 .config-page {
   max-width: 800px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 28px 24px 48px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #e0e0e0;
+  color: var(--text-primary);
 }
+
+/* 返回按钮 */
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-bottom: 16px;
+  transition: color 0.15s;
+}
+.back-btn:hover { color: var(--accent); }
 
 .config-header h2 {
   font-size: 20px;
   font-weight: 600;
   margin: 0 0 4px;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .subtitle {
   font-size: 13px;
-  color: #888;
+  color: var(--text-muted);
   margin: 0 0 24px;
 }
 
@@ -437,7 +529,7 @@ function yamlVal(v) {
   display: flex;
   gap: 4px;
   margin-bottom: 24px;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 0;
 }
 
@@ -446,30 +538,29 @@ function yamlVal(v) {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: #888;
+  color: var(--text-muted);
   font-size: 14px;
   cursor: pointer;
   margin-bottom: -1px;
   transition: all 0.15s;
 }
-
-.tab-btn:hover { color: #ccc; }
-.tab-btn.active { color: #4a9eff; border-bottom-color: #4a9eff; }
+.tab-btn:hover { color: var(--text-secondary); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 .active-badge {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 6px;
   font-size: 10px;
-  background: #4a9eff22;
-  color: #4a9eff;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
   border-radius: 4px;
   vertical-align: middle;
 }
 
 .mode-tip {
   font-size: 12px;
-  color: #555;
+  color: var(--text-muted);
   margin: -12px 0 16px;
 }
 
@@ -479,15 +570,15 @@ function yamlVal(v) {
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #aaa;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 12px;
 }
 
 .server-card {
-  background: #1e1e1e;
-  border: 1px solid #333;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 12px;
@@ -500,19 +591,20 @@ function yamlVal(v) {
   margin-bottom: 12px;
   font-size: 13px;
   font-weight: 500;
-  color: #ccc;
+  color: var(--text-secondary);
 }
 
 .del-btn {
   background: none;
-  border: 1px solid #555;
-  color: #888;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   padding: 2px 10px;
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
+  transition: all 0.15s;
 }
-.del-btn:hover { border-color: #e05555; color: #e05555; }
+.del-btn:hover { border-color: #ef4444; color: #ef4444; }
 
 .form-grid {
   display: grid;
@@ -526,7 +618,7 @@ function yamlVal(v) {
   flex-direction: column;
   gap: 6px;
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 .form-grid label.full { grid-column: 1 / -1; }
@@ -534,10 +626,10 @@ function yamlVal(v) {
 .form-grid input,
 .form-grid textarea,
 .form-grid select {
-  background: #111;
-  border: 1px solid #333;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #e0e0e0;
+  color: var(--text-primary);
   padding: 8px 10px;
   font-size: 13px;
   outline: none;
@@ -545,14 +637,15 @@ function yamlVal(v) {
   font-family: inherit;
 }
 .form-grid input:focus,
-.form-grid textarea:focus { border-color: #4a9eff; }
+.form-grid textarea:focus,
+.form-grid select:focus { border-color: var(--accent); }
 
 .checkbox-label {
   flex-direction: row !important;
   align-items: center;
   gap: 8px !important;
   font-size: 13px !important;
-  color: #ccc !important;
+  color: var(--text-secondary) !important;
   cursor: pointer;
 }
 
@@ -561,22 +654,23 @@ function yamlVal(v) {
   flex-direction: column;
   gap: 6px;
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
   margin-bottom: 12px;
 }
 
 .log-paths-row textarea {
-  background: #111;
-  border: 1px solid #333;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #e0e0e0;
+  color: var(--text-primary);
   padding: 8px 10px;
   font-size: 13px;
   outline: none;
   resize: vertical;
   font-family: monospace;
+  transition: border-color 0.15s;
 }
-.log-paths-row textarea:focus { border-color: #4a9eff; }
+.log-paths-row textarea:focus { border-color: var(--accent); }
 
 .test-row {
   display: flex;
@@ -586,29 +680,27 @@ function yamlVal(v) {
 
 .test-btn {
   padding: 7px 16px;
-  background: #1a3a5c;
-  border: 1px solid #4a9eff;
-  color: #4a9eff;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid var(--accent);
+  color: var(--accent);
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 }
-.test-btn:hover:not(:disabled) { background: #4a9eff; color: #fff; }
+.test-btn:hover:not(:disabled) { background: var(--accent); color: #fff; }
 .test-btn:disabled { opacity: 0.5; cursor: default; }
 
-.test-result {
-  font-size: 13px;
-}
-.test-result.ok { color: #4caf50; }
-.test-result.fail { color: #e05555; }
+.test-result { font-size: 13px; }
+.test-result.ok   { color: #22c55e; }
+.test-result.fail { color: #ef4444; }
 
 .add-btn {
   margin-top: 4px;
   background: none;
-  border: 1px dashed #444;
-  color: #888;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
   padding: 8px 20px;
   border-radius: 6px;
   font-size: 13px;
@@ -616,12 +708,12 @@ function yamlVal(v) {
   width: 100%;
   transition: all 0.15s;
 }
-.add-btn:hover { border-color: #4a9eff; color: #4a9eff; }
+.add-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 .section-divider {
   margin: 28px 0 20px;
   border: none;
-  border-top: 1px solid #2a2a2a;
+  border-top: 1px solid var(--border);
 }
 
 .action-row {
@@ -633,38 +725,39 @@ function yamlVal(v) {
 
 .save-btn {
   padding: 10px 32px;
-  background: #4a9eff;
+  background: var(--accent);
   border: none;
   color: #fff;
   border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: opacity 0.15s;
 }
-.save-btn:hover:not(:disabled) { background: #2f7de0; }
+.save-btn:hover:not(:disabled) { opacity: 0.85; }
 .save-btn:disabled { opacity: 0.5; cursor: default; }
 
 .save-result { font-size: 13px; }
-.save-result.ok { color: #4caf50; }
-.save-result.fail { color: #e05555; }
+.save-result.ok   { color: #22c55e; }
+.save-result.fail { color: #ef4444; }
 
 .input-eye {
   position: relative;
   display: flex;
   align-items: center;
-  background: #111;
-  border: 1px solid #333;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 6px;
   transition: border-color 0.15s;
 }
-.input-eye:focus-within { border-color: #4a9eff; }
+.input-eye:focus-within { border-color: var(--accent); }
 .input-eye input {
   flex: 1;
   background: none;
   border: none !important;
   outline: none !important;
   padding: 8px 36px 8px 36px;
+  color: var(--text-primary);
 }
 .eye-lock {
   position: absolute;
@@ -680,9 +773,108 @@ function yamlVal(v) {
   border: none;
   cursor: pointer;
   padding: 0;
-  color: #666;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
 }
-.eye-btn:hover { color: #aaa; }
+.eye-btn:hover { color: var(--text-secondary); }
+/* ES 数据预览 */
+.es-preview {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+.preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-refresh {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.3s;
+}
+.preview-refresh:hover { transform: rotate(180deg); }
+.preview-loading, .preview-error, .preview-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+.preview-error { color: #f87171; }
+.preview-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  flex: 1;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  text-align: center;
+}
+.stat-card.error {
+  background: color-mix(in srgb, #f87171 8%, transparent);
+  border-color: color-mix(in srgb, #f87171 20%, transparent);
+}
+.stat-card.warn {
+  background: color-mix(in srgb, #fbbf24 8%, transparent);
+  border-color: color-mix(in srgb, #fbbf24 20%, transparent);
+}
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.stat-card.error .stat-value { color: #f87171; }
+.stat-card.warn .stat-value { color: #fbbf24; }
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.service-list-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.service-table { display: flex; flex-direction: column; gap: 4px; }
+.service-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 120px;
+  align-items: center;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  gap: 8px;
+}
+.service-row:not(.header-row):hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.header-row {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.svc-name { color: var(--text-primary); font-weight: 500; }
+.bar-wrap { display: flex; align-items: center; gap: 6px; }
+.bar-fill {
+  height: 6px;
+  background: var(--accent);
+  border-radius: 3px;
+  min-width: 2px;
+  max-width: 70px;
+  flex-shrink: 0;
+}
+.bar-pct { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+
 </style>

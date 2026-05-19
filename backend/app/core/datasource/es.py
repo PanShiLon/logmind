@@ -14,7 +14,7 @@ class ESDataSource(LogDataSource):
         self._index = config.default_index or "app-logs-*"
         self._es = AsyncElasticsearch(
             hosts=config.hosts or ["http://localhost:9200"],
-            http_auth=(config.username, config.password)
+            basic_auth=(config.username, config.password)
             if config.username
             else None,
             verify_certs=config.verify_certs,
