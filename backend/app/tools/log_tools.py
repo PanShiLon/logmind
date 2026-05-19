@@ -130,4 +130,48 @@ def make_log_tools(datasource: LogDataSource) -> list:
             return f"数据源连接正常 {info}"
         return f"数据源连接异常: {status.get('message', '未知错误')}"
 
-    return [search_logs, count_errors, get_error_trend, analyze_exception, health_check]
+    @tool
+    async def get_service_error_stats(
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        top_n: int = 10,
+    ) -> str:
+        """
+        统计各服务的错误数量，用于生成柱状图或饼图。
+        - top_n: 返回错误最多的前 N 个服务
+        - start_time / end_time: ISO 8601 格式
+        返回 JSON 格式的服务名→错误数映射。
+        """
+        st = datetime.fromisoformat(start_time) if start_time else None
+        et = datetime.fromisoformat(end_time) if end_time else None
+        counts = await datasource.aggregate(field="service_name", start_time=st, end_time=et)
+        if not counts:
+            return "暂无服务错误数据"
+        top = dict(list(counts.items())[:top_n])
+        import json
+        return json.dumps({"type": "service_error_stats", "data": top}, ensure_ascii=False)
+
+    @tool
+    async def get_time_series_chart(
+        interval: str = "1h",
+        level: str = "ERROR",
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> str:
+        """
+        获取日志时间趋势数据，用于生成折线图。
+        - interval: 时间粒度 1m / 5m / 15m / 1h / 1d
+        - level: 日志级别 ERROR / WARN / INFO
+        - start_time / end_time: ISO 8601 格式
+        返回 JSON 格式的时间序列数据。
+        """
+        st = datetime.fromisoformat(start_time) if start_time else None
+        et = datetime.fromisoformat(end_time) if end_time else None
+        series = await datasource.time_series(interval=interval, level=level, start_time=st, end_time=et)
+        if not series:
+            return f"无 {level} 趋势数据"
+        import json
+        return json.dumps({"type": "time_series", "level": level, "interval": interval, "data": series}, ensure_ascii=False)
+
+    return [search_logs, count_errors, get_error_trend, analyze_exception, health_check,
+            get_service_error_stats, get_time_series_chart]

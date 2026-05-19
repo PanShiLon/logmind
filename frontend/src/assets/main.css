@@ -1,35 +1,53 @@
 @import './base.css';
 
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  font-weight: normal;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
-a,
-.green {
-  text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
+/* ── 主题变量 ── */
+:root, [data-theme="dark"] {
+  --bg-app:      #0f1117;
+  --bg-sidebar:  #161b27;
+  --bg-main:     #0f1117;
+  --bg-card:     #1e2535;
+  --bg-input:    #111827;
+  --bg-msg-ai:   #1e2535;
+  --bg-msg-user: #1e3a5f;
+  --border:      #1e2535;
+  --text-primary:   #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+  --accent:      #3b82f6;
+  --scrollbar-thumb: #2a3a4a;
 }
 
-@media (hover: hover) {
-  a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
+[data-theme="light"] {
+  --bg-app:      #f5f7fa;
+  --bg-sidebar:  #ffffff;
+  --bg-main:     #f5f7fa;
+  --bg-card:     #ffffff;
+  --bg-input:    #ffffff;
+  --bg-msg-ai:   #ffffff;
+  --bg-msg-user: #2563eb;
+  --border:      #e2e8f0;
+  --text-primary:   #1e293b;
+  --text-secondary: #475569;
+  --text-muted:     #94a3b8;
+  --accent:      #2563eb;
+  --scrollbar-thumb: #cbd5e1;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  transition: background 0.2s, color 0.2s;
 }
 
 @media (min-width: 1024px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
-
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
-  }
+  body { display: block; }
+  #app { display: block; padding: 0; }
 }

@@ -22,18 +22,20 @@ class ESDataSource(LogDataSource):
 
     def _hit_to_entry(self, hit: dict) -> LogEntry:
         src = hit.get("_source", {})
-        ts_raw = src.get("@timestamp") or src.get("timestamp")
+        app = src.get("app", {})
+        ts_raw = src.get("@timestamp") or app.get("timestamp") or src.get("timestamp")
         try:
             ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00")) if ts_raw else None
         except (ValueError, AttributeError):
             ts = None
-        level = (src.get("level") or src.get("log.level") or "UNKNOWN").upper()
-        message = src.get("message") or src.get("msg") or str(src)
+        level = (app.get("level") or src.get("level") or src.get("log.level") or "UNKNOWN").upper()
+        message = app.get("message") or src.get("message") or src.get("msg") or str(src)
+        service = app.get("service_name") or src.get("service_name") or hit.get("_index", "es")
         return LogEntry(
             timestamp=ts,
             level=level,
             message=message,
-            source=hit.get("_index", "es"),
+            source=service,
             raw=str(src),
             extra=src,
         )
@@ -47,9 +49,10 @@ class ESDataSource(LogDataSource):
     ) -> dict:
         must = []
         if query:
-            must.append({"match": {"message": query}})
+            # app.message 是 keyword，用 wildcard 支持关键词搜索
+            must.append({"wildcard": {"app.message": {"value": f"*{query}*", "case_insensitive": True}}})
         if level:
-            must.append({"term": {"level": level.upper()}})
+            must.append({"term": {"app.level": level.upper()}})
         if start_time or end_time:
             range_filter: dict = {}
             if start_time:
@@ -88,11 +91,14 @@ class ESDataSource(LogDataSource):
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
     ) -> Dict[str, int]:
+        # 字段名映射到实际 ES 字段
+        field_map = {"level": "app.level", "service_name": "app.service_name", "env": "app.env"}
+        es_field = field_map.get(field, field)
         resp = await self._es.search(
             index=self._index,
             query=self._build_query(query, None, start_time, end_time),
             size=0,
-            aggs={"by_field": {"terms": {"field": field, "size": 50}}},
+            aggs={"by_field": {"terms": {"field": es_field, "size": 50}}},
         )
         buckets = resp.get("aggregations", {}).get("by_field", {}).get("buckets", [])
         return {b["key"]: b["doc_count"] for b in buckets}
@@ -123,7 +129,7 @@ class ESDataSource(LogDataSource):
 
     async def health_check(self) -> Dict[str, Any]:
         try:
-            info = await self._es.info()
-            return {"status": "ok", "datasource": "elasticsearch", "version": info["version"]["number"]}
+            resp = await self._es.count(index=self._index)
+            return {"status": "ok", "datasource": "elasticsearch", "index": self._index, "total": resp["count"]}
         except Exception as e:
             return {"status": "error", "message": str(e)}

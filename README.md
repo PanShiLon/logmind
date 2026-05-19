@@ -4,77 +4,79 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
-[![GitHub Stars](https://img.shields.io/github/stars/panshilong/logmind?style=social)](https://github.com/panshilong/logmind)
+[![GitHub Stars](https://img.shields.io/github/stars/PanShiLon/logmind?style=social)](https://github.com/PanShiLon/logmind)
 
-<!--
-  GIF-1（Phase 2 录制后替换）：
-  SSH 零配置上手 — 填写 config.yaml → docker compose up → 浏览器输入自然语言 → 日志出现
-  GIF-2：跨服务器聚合分析 — "过去1小时哪台服务器报错最多" → AI 并发查询 → 排名图表
-  GIF-3：一键切换模式 — 改一行 config → 同样的问题从 ES 返回
--->
-
-> 📌 **动图演示**：前端完成后更新（Phase 2）
+> 📌 **动图演示**：录制中，Phase 2 完成后发布
 
 ---
 
 ## 特性
 
 - **SSH 直连模式** ⭐：只需服务器账号密码，零基础设施依赖，5分钟上手
-- **Native 模式**：内置 DuckDB 存储 + 日志采集器，替代 ELK 全套
+- **Native 模式**：内置 DuckDB 存储 + 日志采集器，替代 ELK 全套（Phase 3）
 - **Bridge 模式**：已有 Elasticsearch 直接接入，AI 替你写 DSL
-- **三模式共用一套 AI**：只改一行 `datasource.type`，Agent 逻辑不变
-- **Multi-Agent 架构**：LangGraph 驱动，意图分类 → 查询/分析/看板自动路由
+- **Multi-Agent 架构**：LangGraph 驱动，自动识别意图 → 查询 Agent / 分析 Agent 分工
+- **流式对话**：SSE 实时输出，工具调用过程可见，不是黑盒
 - **多 LLM 支持**：Kimi / DeepSeek / Qwen / OpenAI，改一行配置切换
-- **错误根因分析**：不只是搜索，自动分析堆栈、趋势、给出修复建议
-- **桌面应用**：Windows + Mac 安装包，无需命令行（Phase 5）
-- **IDEA 插件**：IDE 内直接分析异常堆栈（Phase 6）
+- **三模式共用一套 AI**：只改一行 `datasource.type`，Agent 逻辑不变
 
 ---
 
 ## 快速开始
 
-### 方式一：Docker（推荐）
+### 方式一：本地运行
+
+**1. 克隆并配置**
 
 ```bash
-git clone https://github.com/panshilong/logmind.git
-cd logmind
-cp backend/config.example.yaml backend/config.yaml
-# 编辑 config.yaml，填入 SSH 信息和 LLM API Key
-docker compose up
-```
-
-访问 `http://localhost:8000/docs` 查看 API 文档。
-
-### 方式二：本地运行（macOS）
-
-```bash
-git clone https://github.com/panshilong/logmind.git
+git clone https://github.com/PanShiLon/logmind.git
 cd logmind/backend
 cp config.example.yaml config.yaml
-# 编辑 config.yaml，填入 SSH 信息和 LLM API Key
+# 编辑 config.yaml，填入 SSH 服务器信息和 LLM API Key
+```
 
-# 需要 Python 3.12（macOS 上 3.11 有 libexpat 兼容问题）
+**2. 安装后端依赖**（macOS，需要 Python 3.12）
+
+```bash
 brew install python@3.12 expat
 /opt/homebrew/opt/python@3.12/bin/python3.12 -m venv .venv --without-pip
 curl -sS https://bootstrap.pypa.io/get-pip.py | DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib .venv/bin/python
 source .venv/bin/activate
 DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib pip install -r requirements.txt
-DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib uvicorn main:app --reload --port 8000
 ```
+
+> Linux / Windows 无需 `DYLD_LIBRARY_PATH`，直接 `python -m venv .venv && pip install -r requirements.txt`。
+
+**3. 启动后端**
+
+```bash
+./start.sh          # macOS
+# 或：uvicorn main:app --reload --port 8000
+```
+
+**4. 启动前端**
+
+```bash
+cd ../frontend
+npm install
+npm run dev
+```
+
+访问 `http://localhost:5173` 开始对话。
 
 ---
 
-## 配置示例（SSH 直连模式，最简单）
+## 配置示例
 
 ```yaml
-datasource:
-  type: ssh          # 改为 duckdb 或 elasticsearch 即可切换模式
-
 llm:
-  provider: kimi
+  provider: kimi          # openai | kimi | deepseek | qwen | zhipu
   api_key: sk-xxxx
-  model: moonshot-v1-8k
+  model: kimi-k2-0711-preview
   base_url: https://api.moonshot.cn/v1
+
+datasource:
+  type: ssh               # 改为 duckdb 或 elasticsearch 即可切换模式
 
 servers:
   - name: 支付服务
@@ -89,14 +91,15 @@ servers:
     username: deploy
     password: xxxx
     log_paths:
-      - /var/log/order/*.log     # 支持通配符
+      - /var/log/order/*.log
 ```
 
-你可以直接问：
+可以直接问：
 
 - `"支付服务今天有没有报错？"`
 - `"过去1小时 NullPointerException 出现了多少次？"`
-- `"所有服务里 ERROR 最多的是哪个？"`（跨多台服务器并发查询）
+- `"分析一下最近的错误趋势，是否在加剧？"`
+- `"所有服务里 ERROR 最多的是哪个？"`
 
 ---
 
@@ -104,12 +107,11 @@ servers:
 
 | 类型 | `datasource.type` | 说明 | 前置条件 |
 |------|-------------------|------|---------|
-| SSH 直连 ⭐ | `ssh` | 零基础设施，推荐新手 | SSH 账号密码 |
-| 本地存储 | `duckdb` | 内置采集器，支持历史查询 | 无 |
+| SSH 直连 ⭐ | `ssh` | 零基础设施，推荐起步 | SSH 账号密码 |
+| 本地存储 | `duckdb` | 内置采集器，支持历史查询（Phase 3） | 无 |
 | Elasticsearch | `elasticsearch` | 已有 ELK 直接接入 | ES 地址 |
-| SkyWalking | `skywalking` | APM + Trace 数据（Phase 4） | OAP Server 地址 |
 
-三种模式可以无缝升级：SSH → DuckDB → ES，**不用换工具，只改一行配置**。
+三种模式无缝升级：SSH → DuckDB → ES，**不换工具，只改一行配置**。
 
 ---
 
@@ -131,14 +133,20 @@ servers:
 logmind/
 ├── backend/
 │   ├── app/
-│   │   ├── core/datasource/   # DataSource 抽象层（SSH/DuckDB/ES）
-│   │   ├── tools/             # LangChain Tools
-│   │   ├── agents/            # LangGraph 状态图
-│   │   └── api/               # FastAPI 接口（SSE 流式输出）
-│   └── main.py
-├── frontend/                  # Vue3 前端（Phase 2）
-├── electron/                  # 桌面应用（Phase 5）
-├── idea-plugin/               # IDEA 插件（Phase 6）
+│   │   ├── agents/          # LangGraph 状态图（classify → query/analysis）
+│   │   ├── api/             # FastAPI 接口（SSE 流式输出）
+│   │   ├── core/
+│   │   │   ├── datasource/  # DataSource 抽象层（SSH/DuckDB/ES）
+│   │   │   ├── llm_factory.py
+│   │   │   └── settings.py
+│   │   └── tools/           # LangChain Tools
+│   ├── config.example.yaml
+│   ├── main.py
+│   └── start.sh
+├── frontend/                # Vue3 + Element Plus
+│   └── src/
+│       ├── views/ChatView.vue
+│       └── components/LogTable.vue
 └── docs/
 ```
 
@@ -147,9 +155,9 @@ logmind/
 ## 开发路线图
 
 - [x] Phase 1：SSH 直连 + LangGraph + FastAPI 骨架
-- [ ] Phase 2：Analysis Agent + Vue3 前端 + GIF 演示
+- [x] Phase 2：Analysis Agent + Vue3 前端
 - [ ] Phase 3：Dashboard Agent + DuckDB Native 模式
-- [ ] Phase 4：Docker Compose + SkyWalking + LangFuse 可观测性
+- [ ] Phase 4：Docker Compose + LangFuse 可观测性
 - [ ] Phase 5：Electron 桌面应用（Windows + Mac）
 - [ ] Phase 6：IntelliJ IDEA 插件
 
@@ -166,4 +174,4 @@ LogMind 是独立原创开发的项目，非任何现有项目的 fork 或衍生
 
 ## License
 
-MIT © [panshilong](https://github.com/panshilong)
+MIT © [panshilong](https://github.com/PanShiLon)

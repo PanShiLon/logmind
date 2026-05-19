@@ -5,11 +5,12 @@ from typing import AsyncGenerator
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, AIMessageChunk
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
 
 from ..agents.graph import build_graph
 from ..core.datasource.factory import create_datasource
 from ..core.settings import get_settings
+from ..db.database import get_messages, save_message, update_session_title
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -30,13 +31,24 @@ async def _get_graph():
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: str = "default"
+    session_id: str
 
 
-async def _stream_generator(message: str) -> AsyncGenerator[str, None]:
+async def _stream_generator(message: str, session_id: str) -> AsyncGenerator[str, None]:
     graph = await _get_graph()
-    state = {"messages": [HumanMessage(content=message)], "intent": None}
+
+    history = await get_messages(session_id)
+    lc_messages = []
+    for m in history:
+        if m["role"] == "user":
+            lc_messages.append(HumanMessage(content=m["content"]))
+        else:
+            lc_messages.append(AIMessage(content=m["content"]))
+    lc_messages.append(HumanMessage(content=message))
+
+    state = {"messages": lc_messages, "intent": None}
     last_intent = None
+    ai_reply = []
 
     async for event in graph.astream_events(state, version="v1"):
         kind = event["event"]
@@ -64,8 +76,18 @@ async def _stream_generator(message: str) -> AsyncGenerator[str, None]:
                 continue
             chunk = event["data"].get("chunk")
             if isinstance(chunk, AIMessageChunk) and chunk.content:
+                ai_reply.append(chunk.content)
                 data = json.dumps({"type": "text", "content": chunk.content}, ensure_ascii=False)
                 yield f"data: {data}\n\n"
+
+    full_reply = "".join(ai_reply)
+    await save_message(session_id, "user", message)
+    await save_message(session_id, "assistant", full_reply)
+
+    # 用第一条用户消息作为会话标题（前30字）
+    if not history:
+        title = message[:30]
+        await update_session_title(session_id, title)
 
     yield "data: {\"type\": \"done\"}\n\n"
 
@@ -73,7 +95,7 @@ async def _stream_generator(message: str) -> AsyncGenerator[str, None]:
 @router.post("/chat")
 async def chat(req: ChatRequest):
     return StreamingResponse(
-        _stream_generator(req.message),
+        _stream_generator(req.message, req.session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -87,3 +109,25 @@ async def datasource_health():
     settings = get_settings()
     datasource = create_datasource(settings)
     return await datasource.health_check()
+
+
+@router.get("/health/servers")
+async def servers_health():
+    """逐台检查所有 SSH 服务器连通性，返回每台状态"""
+    import asyncssh
+    settings = get_settings()
+    results = []
+    for s in settings.servers:
+        try:
+            connect_kwargs = {
+                "host": s.host, "port": s.port,
+                "username": s.username, "known_hosts": None,
+            }
+            if s.password:
+                connect_kwargs["password"] = s.password
+            async with asyncssh.connect(**connect_kwargs) as conn:
+                await conn.run("echo ok", check=True)
+            results.append({"name": s.name, "host": s.host, "status": "ok"})
+        except Exception as e:
+            results.append({"name": s.name, "host": s.host, "status": "error", "error": str(e)})
+    return results
