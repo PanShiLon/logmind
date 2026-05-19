@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>LogMind LangGraph 状态图</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:#eef1f8;width:1200px}
+.wrap{width:1200px;padding:36px 40px 40px}
+.hd{background:linear-gradient(135deg,#1a1a2e 0%,#16213e 55%,#0f3460 100%);border-radius:18px;padding:36px 48px;color:#fff;margin-bottom:28px;position:relative;overflow:hidden}
+.hd::before{content:"";position:absolute;top:-70px;right:-70px;width:240px;height:240px;border-radius:50%;background:rgba(159,122,234,.1)}
+.hd-tag{display:inline-block;background:rgba(159,122,234,.2);border:1px solid rgba(159,122,234,.4);color:#d6bcfa;padding:4px 16px;border-radius:20px;font-size:12px;margin-bottom:14px}
+.hd h1{font-size:30px;font-weight:800;margin-bottom:8px}
+.hd p{font-size:13px;opacity:.65;font-family:monospace}
+
+.step{border-radius:14px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08);margin-bottom:8px}
+.step-hd{padding:10px 20px;font-size:12px;font-weight:700;letter-spacing:.5px;display:flex;align-items:center;gap:8px;color:#fff}
+.step-num{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0}
+.step-body{background:#fff;padding:16px 20px}
+
+.arr{display:flex;justify-content:center;align-items:flex-end;height:24px;position:relative;margin-bottom:8px}
+.arr::before{content:"";position:absolute;left:50%;top:0;bottom:6px;width:2px;background:linear-gradient(to bottom,#a0aec0,#cbd5e0)}
+.arr-tip{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #a0aec0;position:relative;z-index:1}
+
+.s-entry .step-hd{background:linear-gradient(135deg,#f6ad55,#e07b39)}
+.s-classify .step-hd{background:linear-gradient(135deg,#9f7aea,#6b46c1)}
+.s-route .step-hd{background:linear-gradient(135deg,#667eea,#764ba2)}
+.s-query .step-hd{background:linear-gradient(135deg,#4299e1,#2b6cb0)}
+.s-analysis .step-hd{background:linear-gradient(135deg,#48bb78,#276749)}
+.s-dashboard .step-hd{background:linear-gradient(135deg,#ed8936,#c05621)}
+.s-end .step-hd{background:linear-gradient(135deg,#38b2ac,#2c7a7b)}
+
+.irow{display:flex;gap:10px}
+.ibox{flex:1;border-radius:8px;padding:11px 14px}
+.ibt{font-size:11.5px;font-weight:700;margin-bottom:3px}
+.ibs{font-size:10.5px;color:#718096;line-height:1.55}
+
+.ib-blue{background:#ebf8ff;border:1.5px solid #bee3f8}.ib-blue .ibt{color:#2b6cb0}
+.ib-purple{background:#faf5ff;border:1.5px solid #d6bcfa}.ib-purple .ibt{color:#553c9a}
+.ib-green{background:#f0fff4;border:1.5px solid #9ae6b4}.ib-green .ibt{color:#276749}
+.ib-teal{background:#e6fffa;border:1.5px solid #81e6d9}.ib-teal .ibt{color:#2c7a7b}
+.ib-orange{background:#fffaf0;border:1.5px solid #fbd38d}.ib-orange .ibt{color:#c05621}
+
+/* Route visual */
+.route-visual{display:flex;align-items:stretch;gap:0;margin:10px 0}
+.rv-center{width:3px;background:linear-gradient(to bottom,#9f7aea,#d6bcfa);margin:0 0;flex-shrink:0;position:relative}
+.rv-left{flex:1;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;padding-right:16px}
+.rv-right{flex:3;display:flex;flex-direction:column;gap:10px;padding-left:16px}
+.rv-label{font-size:12px;font-weight:700;color:#553c9a;margin-bottom:4px}
+.rv-desc{font-size:10.5px;color:#718096}
+
+.agent-card{border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px}
+.ac-icon{font-size:26px;flex-shrink:0}
+.ac-info{flex:1}
+.ac-title{font-size:13px;font-weight:700;margin-bottom:3px}
+.ac-desc{font-size:10.5px;color:#718096;line-height:1.5}
+.ac-tag{display:inline-block;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;margin-top:4px}
+
+.ac-query{background:#ebf8ff;border:2px solid #bee3f8}
+.ac-query .ac-title{color:#2b6cb0}
+.ac-query .ac-tag{background:#bee3f8;color:#2b6cb0}
+
+.ac-analysis{background:#f0fff4;border:2px solid #9ae6b4}
+.ac-analysis .ac-title{color:#276749}
+.ac-analysis .ac-tag{background:#9ae6b4;color:#276749}
+
+.ac-dashboard{background:#fffaf0;border:2px solid #fbd38d}
+.ac-dashboard .ac-title{color:#c05621}
+.ac-dashboard .ac-tag{background:#fbd38d;color:#744210}
+
+/* ReAct loop */
+.react-loop{display:flex;align-items:center;justify-content:center;gap:0;padding:8px 0;margin:8px 0;background:#f7fafc;border-radius:10px;border:1.5px dashed #cbd5e0}
+.rl-step{text-align:center;padding:10px 14px;border-radius:8px;margin:0 4px}
+.rl-icon{font-size:18px;margin-bottom:3px}
+.rl-label{font-size:11px;font-weight:700}
+.rl-desc{font-size:9.5px;color:#718096;margin-top:2px}
+.rl-think{background:#ebf8ff;border:1.5px solid #bee3f8}.rl-think .rl-label{color:#2b6cb0}
+.rl-act{background:#f0fff4;border:1.5px solid #9ae6b4}.rl-act .rl-label{color:#276749}
+.rl-obs{background:#fffff0;border:1.5px solid #faf089}.rl-obs .rl-label{color:#975a16}
+.rl-check{background:#faf5ff;border:1.5px solid #d6bcfa}.rl-check .rl-label{color:#553c9a}
+.rl-arrow{font-size:16px;color:#a0aec0;flex-shrink:0}
+.loop-note{text-align:center;margin-top:6px;font-size:10.5px;color:#805ad5;font-weight:600}
+
+/* End */
+.end-box{background:linear-gradient(135deg,#e6fffa,#ebf8ff);border:2px solid #81e6d9;border-radius:10px;padding:14px 18px;text-align:center}
+.end-box .eb-title{font-size:13px;font-weight:700;color:#2c7a7b;margin-bottom:6px}
+.end-items{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.end-tag{background:#fff;border:1px solid #81e6d9;border-radius:6px;padding:4px 12px;font-size:11px;color:#2c7a7b;font-weight:600}
+
+.note{background:linear-gradient(135deg,#faf5ff,#ede7f6);border:1.5px solid #d6bcfa;border-radius:9px;padding:12px 18px;margin-top:12px;font-size:11px;color:#553c9a;font-style:italic;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <div class="hd-tag">LANGGRAPH STATE FLOW</div>
+    <h1>LogMind Multi-Agent 状态流转图</h1>
+    <p>Classify → Route → Agent ←→ ToolNode (ReAct Loop) → END</p>
+  </div>
+
+  <!-- Step 1: Entry -->
+  <div class="step s-entry">
+    <div class="step-hd"><span class="step-num">1</span>用户输入 · POST /api/chat</div>
+    <div class="step-body">
+      <div class="irow">
+        <div class="ibox ib-orange"><div class="ibt">用户消息</div><div class="ibs">"支付服务今天有没有报错？"<br>"分析一下最近的错误趋势"<br>"画一张过去7天的错误柱状图"</div></div>
+        <div class="ibox ib-orange"><div class="ibt">加载会话上下文</div><div class="ibs">从 SQLite 读取历史消息<br>追加到 AgentState.messages<br>→ 进入 StateGraph</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arr"><div class="arr-tip"></div></div>
+
+  <!-- Step 2: Classify -->
+  <div class="step s-classify">
+    <div class="step-hd"><span class="step-num">2</span>Classify 节点 · 轻量意图分类</div>
+    <div class="step-body">
+      <div class="irow">
+        <div class="ibox ib-purple"><div class="ibt">System Prompt</div><div class="ibs">"你是意图分类器。只返回一个词：<br>query / analyze / dashboard"</div></div>
+        <div class="ibox ib-purple"><div class="ibt">LLM 调用</div><div class="ibs">不绑定 Tools<br>输入 ~100 tokens<br>输出 1 token<br>成本极低</div></div>
+        <div class="ibox ib-purple"><div class="ibt">输出</div><div class="ibs">AgentState.intent = "query"<br>SSE 推送 intent 事件<br>前端显示"正在查询..."</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arr"><div class="arr-tip"></div></div>
+
+  <!-- Step 3: Route -->
+  <div class="step s-route">
+    <div class="step-hd"><span class="step-num">3</span>条件路由 · route_by_intent</div>
+    <div class="step-body">
+      <div class="irow">
+        <div class="agent-card ac-query">
+          <div class="ac-icon">🔍</div>
+          <div class="ac-info">
+            <div class="ac-title">Query Agent</div>
+            <div class="ac-desc">查询日志原文、搜索错误<br>返回格式化的日志条目</div>
+            <span class="ac-tag">intent = "query"</span>
+          </div>
+        </div>
+        <div class="agent-card ac-analysis">
+          <div class="ac-icon">📊</div>
+          <div class="ac-info">
+            <div class="ac-title">Analysis Agent</div>
+            <div class="ac-desc">分析错误趋势、统计分布<br>给出结论和建议</div>
+            <span class="ac-tag">intent = "analyze"</span>
+          </div>
+        </div>
+        <div class="agent-card ac-dashboard">
+          <div class="ac-icon">📈</div>
+          <div class="ac-info">
+            <div class="ac-title">Dashboard Agent</div>
+            <div class="ac-desc">生成 ECharts 配置 JSON<br>&lt;chart_config&gt; 标签协议</div>
+            <span class="ac-tag">intent = "dashboard"</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arr"><div class="arr-tip"></div></div>
+
+  <!-- Step 4: ReAct Loop -->
+  <div class="step s-query">
+    <div class="step-hd"><span class="step-num">4</span>Agent ReAct 循环 · 每个 Agent 独立 ToolNode</div>
+    <div class="step-body">
+      <div class="react-loop">
+        <div class="rl-step rl-think"><div class="rl-icon">🧠</div><div class="rl-label">Agent 推理</div><div class="rl-desc">LLM + Tools<br>选择调用</div></div>
+        <div class="rl-arrow">→</div>
+        <div class="rl-step rl-act"><div class="rl-icon">⚡</div><div class="rl-label">ToolNode 执行</div><div class="rl-desc">search_logs<br>count_errors...</div></div>
+        <div class="rl-arrow">→</div>
+        <div class="rl-step rl-obs"><div class="rl-icon">👁️</div><div class="rl-label">结果追加</div><div class="rl-desc">ToolMessage<br>加入 messages</div></div>
+        <div class="rl-arrow">→</div>
+        <div class="rl-step rl-check"><div class="rl-icon">🔄</div><div class="rl-label">_should_continue</div><div class="rl-desc">有 tool_calls → 继续<br>无 → END</div></div>
+      </div>
+      <div class="loop-note">↩ 回边：tools → query_agent &nbsp;|&nbsp; analysis_tools → analysis_agent &nbsp;|&nbsp; dashboard_tools → dashboard_agent</div>
+
+      <div class="irow" style="margin-top:12px">
+        <div class="ibox ib-blue"><div class="ibt">Query Agent ←→ tools</div><div class="ibs">Prompt 要求返回日志原文<br>格式化输出 timestamp | level | message</div></div>
+        <div class="ibox ib-green"><div class="ibt">Analysis Agent ←→ analysis_tools</div><div class="ibs">Prompt 要求总结趋势<br>给出结论 + 根因分析 + 建议</div></div>
+        <div class="ibox ib-orange"><div class="ibt">Dashboard Agent ←→ dashboard_tools</div><div class="ibs">Prompt 要求输出 &lt;chart_config&gt;<br>生成合法 ECharts option JSON</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arr"><div class="arr-tip"></div></div>
+
+  <!-- Step 5: SSE Output -->
+  <div class="step s-end">
+    <div class="step-hd"><span class="step-num">5</span>SSE 流式输出 · 前端实时渲染</div>
+    <div class="step-body">
+      <div class="end-box">
+        <div class="eb-title">SSE 事件流协议</div>
+        <div class="end-items">
+          <span class="end-tag">intent → 显示意图</span>
+          <span class="end-tag">tool_start → "正在搜索..."</span>
+          <span class="end-tag">tool_end → 工具完成</span>
+          <span class="end-tag">text → 逐 token 追加</span>
+          <span class="end-tag">done → 追问建议</span>
+        </div>
+      </div>
+      <div class="irow" style="margin-top:10px">
+        <div class="ibox ib-teal"><div class="ibt">文字渲染</div><div class="ibs">marked.js 实时解析<br>代码高亮 (github-dark)</div></div>
+        <div class="ibox ib-teal"><div class="ibt">图表渲染</div><div class="ibs">extractCharts() 正则提取<br>chart_config 闭合即渲染</div></div>
+        <div class="ibox ib-teal"><div class="ibt">会话保存</div><div class="ibs">流结束后写入 SQLite<br>首条消息截取为标题</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">关键设计：三个 Agent 各自有独立的 ToolNode 和回边，形成独立 ReAct 循环，互不干扰。共用 ToolNode 会导致控制流跳转错误。</div>
+</div>
+</body>
+</html>
