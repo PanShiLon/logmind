@@ -14,7 +14,7 @@
 
 | 图表分析 | 数据源配置 |
 |:---:|:---:|
-| ![图表](docs/screenshots/chart.png) | ![配置](docs/screenshots/config.png) |
+| ![图表](docs/screenshots/chart.png) | ![配置](docs/screenshots/config.png?v=2) |
 
 ---
 
