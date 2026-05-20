@@ -60,6 +60,7 @@ class DuckDBDataSource(LogDataSource):
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
         limit: int = 100,
+        offset: int = 0,
         servers: Optional[List[str]] = None,
     ) -> SearchResult:
         import time
@@ -82,13 +83,18 @@ class DuckDBDataSource(LogDataSource):
             params.extend(tp)
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        sql = f"SELECT * FROM logs {where} ORDER BY ts DESC LIMIT ?"
+
+        count_sql = f"SELECT COUNT(*) FROM logs {where}"
+        total = self._conn.execute(count_sql, params).fetchone()[0]
+
+        sql = f"SELECT * FROM logs {where} ORDER BY ts DESC LIMIT ? OFFSET ?"
         params.append(limit)
+        params.append(offset)
 
         rows = self._conn.execute(sql, params).fetchall()
         entries = [self._row_to_entry(r) for r in rows]
         took = int((time.monotonic() - t0) * 1000)
-        return SearchResult(entries=entries, total=len(entries), took_ms=took)
+        return SearchResult(entries=entries, total=total, took_ms=took)
 
     async def aggregate(
         self,

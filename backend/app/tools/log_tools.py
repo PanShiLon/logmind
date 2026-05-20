@@ -18,7 +18,7 @@ def make_log_tools(datasource: LogDataSource) -> list:
     ) -> str:
         """
         搜索日志。
-        - query: 关键词或正则，例如 "NullPointerException"
+        - query: 搜索日志内容的关键词或正则，例如 "NullPointerException"、"timeout"。注意：不要传日志级别（如ERROR），级别过滤请用 level 参数
         - level: 日志级别过滤 ERROR / WARN / INFO / DEBUG
         - start_time / end_time: ISO 8601 格式，例如 "2024-01-01T00:00:00"
         - limit: 最多返回条数（默认 50）
@@ -27,6 +27,8 @@ def make_log_tools(datasource: LogDataSource) -> list:
         st = datetime.fromisoformat(start_time) if start_time else None
         et = datetime.fromisoformat(end_time) if end_time else None
         sv = [s.strip() for s in servers.split(",")] if servers else None
+
+        print(f"[DEBUG search_logs] query={query!r}, level={level!r}, start_time={start_time!r}, end_time={end_time!r}, limit={limit}, servers={servers!r}")
 
         result = await datasource.search(
             query=query, level=level,
@@ -37,12 +39,38 @@ def make_log_tools(datasource: LogDataSource) -> list:
         if not result.entries:
             return f"未找到匹配 '{query}' 的日志（耗时 {result.took_ms}ms）"
 
+        import json as _json
+        entries_json = []
+        for e in result.entries[:50]:
+            ts = e.timestamp.strftime("%Y-%m-%d %H:%M:%S") if e.timestamp else None
+            msg = (e.message or "")[:500].replace("\x00", "")
+            entries_json.append({
+                "timestamp": ts,
+                "level": e.level,
+                "source": e.source,
+                "message": msg,
+            })
+
         lines = [f"找到 {result.total} 条日志（耗时 {result.took_ms}ms）：\n"]
         for e in result.entries[:20]:
             ts = e.timestamp.strftime("%Y-%m-%d %H:%M:%S") if e.timestamp else "??:??:??"
             lines.append(f"[{ts}] [{e.level}] [{e.source}] {e.message[:200]}")
         if result.total > 20:
             lines.append(f"... 还有 {result.total - 20} 条未展示")
+
+        log_data = _json.dumps({
+            "total": result.total,
+            "took_ms": result.took_ms,
+            "entries": entries_json,
+            "query_params": {
+                "query": query,
+                "level": level,
+                "start_time": start_time,
+                "end_time": end_time,
+                "servers": servers,
+            },
+        }, ensure_ascii=False)
+        lines.append(f"\n<log_data>{log_data}</log_data>")
         return "\n".join(lines)
 
     @tool

@@ -19,6 +19,20 @@
     </div>
     <p class="mode-tip">三种模式互斥，保存时以当前选中的模式为准。</p>
 
+    <!-- 数据源说明 -->
+    <div class="ds-desc" v-if="activeTab === 'ssh'">
+      <span class="ds-desc-icon">⚡</span>
+      <span>零基础设施依赖，只需 SSH 账号密码即可远程 grep 查日志，适合快速上手。</span>
+    </div>
+    <div class="ds-desc" v-else-if="activeTab === 'es'">
+      <span class="ds-desc-icon">🔍</span>
+      <span>接入已有的 Elasticsearch / ELK，支持全文检索、聚合分析和真分页，适合大规模生产环境。</span>
+    </div>
+    <div class="ds-desc" v-else-if="activeTab === 'duckdb'">
+      <span class="ds-desc-icon">💾</span>
+      <span>DuckDB 是一个嵌入式分析型数据库（类似 SQLite），内置日志采集器将日志持久化到本地文件，支持离线历史查询，无需外部服务。</span>
+    </div>
+
     <!-- SSH Tab -->
     <div v-if="activeTab === 'ssh'" class="tab-panel">
       <div class="section-title">SSH 服务器列表</div>
@@ -562,6 +576,25 @@ function yamlVal(v) {
   font-size: 12px;
   color: var(--text-muted);
   margin: -12px 0 16px;
+}
+
+.ds-desc {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.ds-desc-icon {
+  flex-shrink: 0;
+  font-size: 15px;
+  margin-top: 1px;
 }
 
 .tab-panel { animation: fadeIn 0.15s ease; }

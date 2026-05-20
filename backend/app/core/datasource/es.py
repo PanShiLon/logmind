@@ -48,8 +48,8 @@ class ESDataSource(LogDataSource):
         end_time: Optional[datetime],
     ) -> dict:
         must = []
-        if query:
-            # app.message 是 keyword，用 wildcard 支持关键词搜索
+        _LEVELS = {"ERROR", "WARN", "INFO", "DEBUG", "TRACE", "FATAL"}
+        if query and not (level and query.upper() in _LEVELS):
             must.append({"wildcard": {"app.message": {"value": f"*{query}*", "case_insensitive": True}}})
         if level:
             must.append({"term": {"app.level": level.upper()}})
@@ -69,6 +69,7 @@ class ESDataSource(LogDataSource):
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
         limit: int = 100,
+        offset: int = 0,
         servers: Optional[List[str]] = None,
     ) -> SearchResult:
         import time
@@ -77,6 +78,7 @@ class ESDataSource(LogDataSource):
             index=self._index,
             query=self._build_query(query, level, start_time, end_time),
             size=limit,
+            from_=offset,
             sort=[{"@timestamp": "desc"}],
         )
         hits = resp["hits"]["hits"]

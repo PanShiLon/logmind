@@ -81,6 +81,7 @@ class SSHDataSource(LogDataSource):
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
         limit: int = 100,
+        offset: int = 0,
         servers: Optional[List[str]] = None,
     ) -> SearchResult:
         import time

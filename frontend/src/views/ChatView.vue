@@ -1,6 +1,6 @@
 <script setup>
 import { ref, nextTick, onMounted, computed, watch } from 'vue'
-import LogTable from '../components/LogTable.vue'
+import LogExplorer from '../components/LogExplorer.vue'
 import ChartWidget from '../components/ChartWidget.vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
@@ -141,7 +141,15 @@ function formatTime(iso) {
 }
 
 function renderText(text) {
-  const stripped = text.replace(/<chart_config>[\s\S]*?<\/chart_config>/g, '').trim()
+  let stripped = text
+    .replace(/<chart_config>[\s\S]*?<\/chart_config>/g, '')
+    .replace(/<log_data>[\s\S]*?<\/log_data>/g, '')
+    .trim()
+  // 自动将未包裹的 Java 异常堆栈转为代码块
+  stripped = stripped.replace(
+    /(?:^|\n)((?:[a-zA-Z_$][\w.]*(?:Exception|Error|Throwable)[^\n]*(?:\n\s+at [^\n]+|\n\s+\.{3} \d+ more|\nCaused by:[^\n]+)*))/g,
+    '\n```\n$1\n```\n'
+  )
   return marked.parse(stripped)
 }
 
@@ -157,6 +165,17 @@ function extractCharts(text) {
     }
   }
   return charts
+}
+
+function extractLogData(text) {
+  const start = text.indexOf('<log_data>')
+  const end = text.indexOf('</log_data>')
+  if (start === -1 || end === -1) return null
+  try {
+    return JSON.parse(text.substring(start + 10, end))
+  } catch {
+    return null
+  }
 }
 
 // ── 服务器健康 ────────────────────────────────────────────────────────────────
@@ -208,6 +227,7 @@ async function switchSession(id) {
     intent: null,
     tools: [],
     logs: m.role === 'assistant' ? parseLogLines(m.content) : [],
+    logData: m.role === 'assistant' ? extractLogData(m.content) : null,
     charts: m.role === 'assistant' ? extractCharts(m.content) : [],
     suggestions: [],
   }))
@@ -284,7 +304,7 @@ async function sendMessage(text) {
   loading.value = true
   await scrollToBottom()
 
-  const aiMsg = { role: 'assistant', content: '', intent: null, tools: [], logs: [], suggestions: [], charts: [] }
+  const aiMsg = { role: 'assistant', content: '', intent: null, tools: [], logs: [], logData: null, suggestions: [], charts: [] }
   messages.value.push(aiMsg)
 
   try {
@@ -321,6 +341,8 @@ async function sendMessage(text) {
         } else if (evt.type === 'tool_end') {
           const t = [...aiMsg.tools].reverse().find(t => t.name === evt.tool && !t.done)
           if (t) t.done = true
+        } else if (evt.type === 'log_data') {
+          aiMsg.logData = { total: evt.total, took_ms: evt.took_ms, entries: evt.entries, query_params: evt.query_params || null }
         } else if (evt.type === 'text') {
           aiMsg.content += evt.content
           const parsed = parseLogLines(aiMsg.content)
@@ -347,6 +369,37 @@ function handleEnter(e) {
   if (e.shiftKey) return
   e.preventDefault()
   sendMessage()
+}
+
+const logExplorerRefs = ref({})
+
+async function loadMoreLogs(msg, offset) {
+  if (!msg.logData?.query_params) return
+  const params = msg.logData.query_params
+  try {
+    const resp = await fetch('/api/logs/more', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: params.query || '',
+        level: params.level || null,
+        start_time: params.start_time || null,
+        end_time: params.end_time || null,
+        servers: params.servers || null,
+        offset: offset,
+        limit: 50,
+      }),
+    })
+    const data = await resp.json()
+    if (data.entries?.length) {
+      msg.logData.entries = [...msg.logData.entries, ...data.entries]
+      msg.logData.total = data.total
+    }
+  } catch (e) {
+    console.error('loadMoreLogs error:', e)
+  }
+  const ref = logExplorerRefs.value[messages.value.indexOf(msg)]
+  if (ref?.onLoadComplete) ref.onLoadComplete()
 }
 
 const isEmpty = computed(() => messages.value.length === 0)
@@ -544,14 +597,21 @@ onMounted(async () => {
               </div>
             </div>
 
-            <div v-if="msg.logs.length > 0" class="log-section">
+            <LogExplorer
+              v-if="msg.logData"
+              :data="msg.logData"
+              :ref="el => { if (el) logExplorerRefs[i] = el }"
+              @load-more="offset => loadMoreLogs(msg, offset)"
+            />
+
+            <div v-else-if="msg.logs.length > 0" class="log-section">
               <div class="log-section-header">
                 <span class="log-count">{{ msg.logs.length }} 条日志</span>
                 <button class="export-btn" @click="exportLogsCSV(msg.logs)" title="导出 CSV">
                   ↓ 导出 CSV
                 </button>
               </div>
-              <LogTable :entries="msg.logs" />
+              <LogExplorer :data="{ total: msg.logs.length, entries: msg.logs }" />
             </div>
 
             <div v-if="msg.charts && msg.charts.length > 0" class="chart-section">
@@ -649,6 +709,7 @@ onMounted(async () => {
 }
 .ai-text :deep(pre) {
   background: #0d1117;
+  border: 1px solid #21262d;
   border-radius: 8px;
   padding: 12px 14px;
   overflow-x: auto;
@@ -657,8 +718,11 @@ onMounted(async () => {
 .ai-text :deep(pre code) {
   background: none;
   padding: 0;
-  color: inherit;
+  color: #e6edf3;
   font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .ai-text :deep(table) {
   width: 100%;
