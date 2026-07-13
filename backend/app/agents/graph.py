@@ -24,6 +24,11 @@ _QUERY_SYSTEM = """你是 LogMind，一个专业的 AI 日志查询助手。
 - 返回结果整理成可读格式，突出关键信息
 - 用中文回复
 
+【停止条件】严格遵守，避免无意义循环：
+- 单次查询返回 total=0 或 hits=[] 时，最多再换 1 次关键词或时间范围重试，**第 2 次仍空就直接告诉用户"未找到相关日志"**，不要再继续换关键词
+- 同一会话内工具调用累计不超过 3 次，达到上限就基于已查到的信息回答，不要继续
+- 如果用户问的关键词在多次模糊查询后仍找不到，建议用户检查：服务名是否正确 / 时间范围是否扩大 / 关键字是否拼写错误
+
 可用工具：search_logs / count_errors / health_check
 """
 
@@ -99,6 +104,14 @@ class AgentState(TypedDict):
 def _should_continue(state: AgentState) -> Literal["tools", "__end__"]:
     last = state["messages"][-1]
     if hasattr(last, "tool_calls") and last.tool_calls:
+        # 防止 LLM 反复换关键词死循环：统计已发生的工具调用轮数
+        # 每个 AIMessage 携带 tool_calls 算一轮，超过 4 轮强制结束让 LLM 基于已有信息总结
+        tool_rounds = sum(
+            1 for m in state["messages"]
+            if isinstance(m, AIMessage) and getattr(m, "tool_calls", None)
+        )
+        if tool_rounds >= 4:
+            return END
         return "tools"
     return END
 

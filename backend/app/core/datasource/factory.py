@@ -21,8 +21,12 @@ def create_datasource(settings: Settings) -> "LogDataSource":
             from .duckdb import DuckDBDataSource
             return DuckDBDataSource(settings.datasource)
 
+        case "loki":
+            from .loki import LokiDataSource
+            return LokiDataSource(settings.datasource)
+
         case _:
             raise ValueError(
                 f"不支持的 datasource.type: {ds_type}，"
-                f"可选值: ssh | elasticsearch | duckdb"
+                f"可选值: ssh | elasticsearch | duckdb | loki"
             )

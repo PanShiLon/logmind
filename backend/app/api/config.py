@@ -82,6 +82,11 @@ class DuckDBTestRequest(BaseModel):
     db_path: str
 
 
+class LokiTestRequest(BaseModel):
+    loki_url: str
+    loki_selector: Optional[str] = None
+
+
 @router.post("/test-connection/ssh")
 async def test_ssh(req: SSHTestRequest):
     try:
@@ -135,6 +140,32 @@ async def test_es(req: ESTestRequest):
             return {"ok": True, "message": f"ES 连接成功（索引 {req.index} 查询受限，但连接正常）"}
         finally:
             await es_client.close()
+    except Exception as e:
+        return {"ok": False, "message": f"连接失败: {str(e)}"}
+
+
+@router.post("/test-connection/loki")
+async def test_loki(req: LokiTestRequest):
+    try:
+        import httpx
+        import time as _t
+        base = req.loki_url.rstrip("/")
+        selector = req.loki_selector or '{container_name=~".+"}'
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            ready = await client.get(f"{base}/ready")
+            if ready.status_code != 200:
+                return {"ok": False, "message": f"Loki /ready 返回 {ready.status_code}"}
+            # 数最近 1 小时命中，顺便验证 selector 有效
+            end_ns = int(_t.time() * 1e9)
+            expr = f"sum(count_over_time({selector} [3600s]))"
+            r = await client.get(f"{base}/loki/api/v1/query",
+                                 params={"query": expr, "time": str(end_ns)})
+            total = 0
+            if r.status_code == 200:
+                result = r.json().get("data", {}).get("result", [])
+                if result:
+                    total = int(float(result[0]["value"][1]))
+        return {"ok": True, "message": f"Loki 连接成功，最近 1 小时 {total:,} 条命中"}
     except Exception as e:
         return {"ok": False, "message": f"连接失败: {str(e)}"}
 
@@ -196,6 +227,31 @@ async def get_datasource_stats():
             except Exception as e:
                 return {"ok": False, "type": "duckdb", "message": str(e)}
         return {"ok": False, "type": "duckdb"}
+
+    if ds_type == "loki":
+        try:
+            import httpx
+            import time as _t
+            base = ds.get("loki_url", "http://localhost:3100").rstrip("/")
+            selector = ds.get("loki_selector") or '{container_name=~".+"}'
+            end_ns = int(_t.time() * 1e9)
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                total_expr = f"sum(count_over_time({selector} [3600s]))"
+                err_expr = f'sum(count_over_time({selector} | level=~`(?i)error` [3600s]))'
+                tr = await client.get(f"{base}/loki/api/v1/query", params={"query": total_expr, "time": str(end_ns)})
+                er = await client.get(f"{base}/loki/api/v1/query", params={"query": err_expr, "time": str(end_ns)})
+                def _val(resp):
+                    if resp.status_code == 200:
+                        res = resp.json().get("data", {}).get("result", [])
+                        if res:
+                            return int(float(res[0]["value"][1]))
+                    return 0
+                total, error_count = _val(tr), _val(er)
+            error_ratio = round(error_count / total * 100, 1) if total > 0 else 0
+            return {"ok": True, "type": "loki", "total": total,
+                    "error_count": error_count, "error_ratio": error_ratio}
+        except Exception as e:
+            return {"ok": False, "type": "loki", "message": str(e)}
 
     return {"ok": False}
 

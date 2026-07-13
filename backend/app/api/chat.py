@@ -73,7 +73,7 @@ async def _stream_generator(message: str, session_id: str) -> AsyncGenerator[str
     ai_reply = []
     log_data_tags = []
 
-    async for event in graph.astream_events(state, version="v1"):
+    async for event in graph.astream_events(state, version="v1", config={"recursion_limit": 50}):
         kind = event["event"]
         name = event.get("name", "")
 

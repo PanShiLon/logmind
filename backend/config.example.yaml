@@ -46,3 +46,10 @@ servers:
 #   password: xxxx
 #   default_index: "app-logs-*"
 #   verify_certs: false
+
+# 模式四：Loki（接现有 Grafana Loki，纯直查，不发数据给 LLM）
+# datasource:
+#   type: loki
+#   loki_url: http://localhost:3100            # Loki HTTP 地址
+#   loki_selector: '{container_name=~".+"}'    # 基础标签选择器，默认匹配全部容器
+#                                              # 只看本地 dev： '{container_name="scm-bi-dev"}'
