@@ -2,6 +2,7 @@
   <div class="config-page">
     <div class="config-header">
       <a href="/" class="back-btn">← 返回对话</a>
+      <a href="/http" class="back-btn">🛰️ 接口测试</a>
       <h2>数据源配置</h2>
       <p class="subtitle">配置后点击「测试连接」验证，通过后保存生效</p>
     </div>
@@ -20,7 +21,11 @@
     <p class="mode-tip">三种模式互斥，保存时以当前选中的模式为准。</p>
 
     <!-- 数据源说明 -->
-    <div class="ds-desc" v-if="activeTab === 'ssh'">
+    <div class="ds-desc" v-if="activeTab === 'loki'">
+      <span class="ds-desc-icon">📑</span>
+      <span>接入现有 Grafana Loki，纯直查日志（不发数据给 LLM）。适合已有 Loki+Promtail 日志栈、想要清爽实时浏览的场景。日志直查页走的就是这个数据源。</span>
+    </div>
+    <div class="ds-desc" v-else-if="activeTab === 'ssh'">
       <span class="ds-desc-icon">⚡</span>
       <span>零基础设施依赖，只需 SSH 账号密码即可远程 grep 查日志，适合快速上手。</span>
     </div>
@@ -31,6 +36,32 @@
     <div class="ds-desc" v-else-if="activeTab === 'duckdb'">
       <span class="ds-desc-icon">💾</span>
       <span>DuckDB 是一个嵌入式分析型数据库（类似 SQLite），内置日志采集器将日志持久化到本地文件，支持离线历史查询，无需外部服务。</span>
+    </div>
+
+    <!-- Loki Tab -->
+    <div v-if="activeTab === 'loki'" class="tab-panel">
+      <div class="form-grid">
+        <label class="full">
+          Loki 地址
+          <input v-model="loki.loki_url" placeholder="http://localhost:3100" />
+        </label>
+        <label class="full">
+          标签选择器（LogQL selector）
+          <input v-model="loki.loki_selector" placeholder='{container_name=~".+"}' />
+        </label>
+      </div>
+      <p class="loki-hint">
+        选择器决定拉哪些日志。默认 <code>{container_name=~".+"}</code> 匹配全部容器；
+        只看本地 dev 用 <code>{container_name="scm-bi-dev"}</code>。
+      </p>
+      <div class="test-row">
+        <button class="test-btn" @click="testLoki" :disabled="testing === 'loki'">
+          {{ testing === 'loki' ? '测试中...' : '测试连接' }}
+        </button>
+        <span v-if="testResults['loki']" :class="['test-result', testResults['loki'].ok ? 'ok' : 'fail']">
+          {{ testResults['loki'].message }}
+        </span>
+      </div>
     </div>
 
     <!-- SSH Tab -->
@@ -223,17 +254,19 @@ const theme = localStorage.getItem('logmind-theme') || 'dark'
 document.documentElement.setAttribute('data-theme', theme)
 
 const tabs = [
+  { key: 'loki', label: 'Loki' },
   { key: 'ssh', label: 'SSH 直连' },
   { key: 'es', label: 'Elasticsearch' },
   { key: 'duckdb', label: 'DuckDB' },
 ]
-const activeTab = ref('ssh')
+const activeTab = ref('loki')
 
 const ssh = reactive({
   servers: [{ name: 'payment-service', host: '192.168.1.10', port: 22, username: 'root', password: '', private_key_path: '', log_paths: ['/var/log/app/app.log', '/var/log/app/error.log'] }],
 })
 const es = reactive({ hosts: ['http://192.168.1.100:9200'], username: 'elastic', password: '', index: 'app-logs-*', verify_certs: false })
 const duckdb = reactive({ db_path: './data/logmind.db' })
+const loki = reactive({ loki_url: 'http://localhost:3100', loki_selector: '{container_name=~".+"}' })
 const LLM_PROVIDERS = [
   { key: 'kimi',     label: 'Kimi（月之暗面）',  model: 'kimi-k2-0711-preview',  base_url: 'https://api.moonshot.cn/v1' },
   { key: 'deepseek', label: 'DeepSeek',          model: 'deepseek-chat',          base_url: 'https://api.deepseek.com/v1' },
@@ -292,6 +325,10 @@ onMounted(async () => {
     } else if (data.datasource?.type === 'duckdb') {
       duckdb.db_path = data.datasource.db_path || ''
       activeTab.value = 'duckdb'
+    } else if (data.datasource?.type === 'loki') {
+      loki.loki_url = data.datasource.loki_url || 'http://localhost:3100'
+      loki.loki_selector = data.datasource.loki_selector || '{container_name=~".+"}'
+      activeTab.value = 'loki'
     }
   } catch {}
 })
@@ -391,8 +428,24 @@ async function testDuckDB() {
   }
 }
 
-async function testLLM() {
-  testing.value = 'llm'
+async function testLoki() {
+  testing.value = 'loki'
+  testResults['loki'] = null
+  try {
+    const res = await fetch('/api/config/test-connection/loki', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loki_url: loki.loki_url, loki_selector: loki.loki_selector }),
+    })
+    testResults['loki'] = await res.json()
+  } catch (e) {
+    testResults['loki'] = { ok: false, message: `请求失败: ${e.message}` }
+  } finally {
+    testing.value = null
+  }
+}
+
+async function testLLM() {  testing.value = 'llm'
   testResults['llm'] = null
   try {
     const res = await fetch('/api/config/test-connection/llm', {
@@ -445,6 +498,12 @@ async function saveConfig() {
     }
   } else if (dsType === 'duckdb') {
     cfg.datasource = { type: 'duckdb', db_path: duckdb.db_path }
+  } else if (dsType === 'loki') {
+    cfg.datasource = {
+      type: 'loki',
+      loki_url: loki.loki_url,
+      loki_selector: loki.loki_selector,
+    }
   }
 
   // 转成 YAML 字符串
@@ -599,6 +658,20 @@ function yamlVal(v) {
 
 .tab-panel { animation: fadeIn 0.15s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.loki-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+  line-height: 1.6;
+}
+.loki-hint code {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
 
 .section-title {
   font-size: 13px;

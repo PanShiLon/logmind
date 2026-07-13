@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import chat, config as config_router
 from app.api import sessions
+from app.api import http_tester
 from app.db.database import init_db
 
 
@@ -31,6 +32,7 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(config_router.router)
 app.include_router(sessions.router)
+app.include_router(http_tester.router)
 
 
 @app.get("/health")

@@ -504,6 +504,8 @@ onMounted(async () => {
         >
           ↓ 导出会话
         </button>
+        <a href="/" class="config-link">← 返回日志直查</a>
+        <a href="/http" class="config-link">🛰️ 接口测试</a>
         <a href="/config" class="config-link">⚙ 数据源配置</a>
       </div>
     </aside>
@@ -514,9 +516,9 @@ onMounted(async () => {
       <!-- 数据源状态栏 -->
       <div v-if="dsStats" class="ds-stats-bar">
         <span class="ds-stats-type">
-          {{ dsStats.type === 'elasticsearch' ? 'ES' : dsStats.type === 'ssh' ? 'SSH' : 'DuckDB' }}
+          {{ dsStats.type === 'elasticsearch' ? 'ES' : dsStats.type === 'ssh' ? 'SSH' : dsStats.type === 'loki' ? 'Loki' : 'DuckDB' }}
         </span>
-        <template v-if="dsStats.type === 'elasticsearch'">
+        <template v-if="dsStats.type === 'elasticsearch' || dsStats.type === 'loki'">
           <span class="ds-stat-item">总计 <b>{{ (dsStats.total || 0).toLocaleString() }}</b> 条</span>
           <span class="ds-stat-sep">·</span>
           <span class="ds-stat-item ds-stat-error">ERROR <b>{{ (dsStats.error_count || 0).toLocaleString() }}</b></span>
